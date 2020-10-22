@@ -195,3 +195,38 @@ Each of the steps (`impersonation` => `gcs access`) is shown in GCP logs.  Infac
 ![images/gcp_iam_audit_logs.png](images/gcp_iam_audit_logs.png)
 
 
+### Direct AWS Credentials
+
+ To use a useridentity directly (i.,e not via AssumeRole), configure the permission
+ ```bash
+	   gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+	  --role roles/iam.workloadIdentityUser \
+	  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1" 
+```
+
+and use directly, eg:
+
+```golang
+    creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+	conf = &aws.Config{
+		Region:      aws.String(awsRegion),
+		Credentials: creds,
+	}
+	stsService = sts.New(session, conf)
+	input = &sts.GetCallerIdentityInput{}
+	result, err = stsService.GetCallerIdentity(input)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("New Caller Identity :" + result.GoString())
+
+	awsTokenSource, err := sal.AWSTokenSource(
+		&sal.AwsTokenConfig{
+			AwsCredential:        *creds,
+			Scope:                "https://www.googleapis.com/auth/cloud-platform",
+			TargetResource:       "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1",
+			Region:               "us-east-1",
+			TargetServiceAccount: "aws-federated@mineral-minutia-820.iam.gserviceaccount.com",
+		},
+	)        
+```
