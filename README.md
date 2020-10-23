@@ -25,7 +25,6 @@ GCP now surfaces a `STS Service` that will exchange one set of tokens for anothe
 
 The endpoint rest specifications for the STS service is [here](https://cloud.google.com/iam/docs/reference/sts/rest/v1beta/TopLevel/token)
 
-
 To use this, you need both a GCP and AWS project and the ability to create user/service accounts and then apply permissions on those to facilitate the mapping.
 
 
@@ -74,8 +73,6 @@ $ aws sts assume-role --role-arn arn:aws:iam::291738886548:role/gcpsts --role-se
 ```
 
 ![images/aws_role_trust.png](images/aws_role_trust.png)
-
-![images/aws_role_permission.png](images/aws_role_permission.png)
 
 
 3.  Verify Role change
@@ -186,14 +183,57 @@ fooooo
 the first part uses the static token, the second part assumes the role, the third part exchanges the token for a GCP one...finally a _standard_ Google Cloud Storage library is used to download and object using the derived credentials.
 
 
+### Using Federated or IAM Tokens
+
+GCP STS Tokens can be used directly against a few GCP services as described here
+
+Skip step `(5)` of [Exchange Token](https://cloud.google.com/iam/docs/access-resources-aws#exchange-token)
+
+
+What that means is you can skip the step to exchange the GCP Federation token for an Service Account token and _directly_ apply IAM policies on the resource.
+
+This not only saves the step of running the exchange but omits the need for a secondary GCP service account to impersonate.
+
+To use GCS, allow either the Assumed Role or AWS User access to the resource.  In this case `storage.objectAdmin` access:
+
+```bash
+gcloud projects add-iam-policy-binding mineral-minutia-820  \
+ --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession" \
+   --role roles/storage.objectAdmin
+
+gcloud projects add-iam-policy-binding mineral-minutia-820  \
+    --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
+      --role roles/storage.objectAdmin
+```
+
+Set `UseIAMToken:  false` in the go code
+
+
+
 ### Logging
 
-Each of the steps (`impersonation` => `gcs access`) is shown in GCP logs.  Infact,  when accessing the GCS resource, even the underlying root principal is shown (see `firstPartyPrincipal` entry below)
+Depending on the mode you used `UseIAMToken` flag in code, you may either see the IAM service account impersonated then access the GCS resource, or the AWS principal directly.
+
+- `UseIAMToken:  true`:
+   In this mode, the AWS credential is exchanged for a GCP STS and then the GCP STS is again exchanged for a GCP ServiceAccount Token. 
+      `AWS Creds` -> `GCP STS (workload pool)` -> `GCP IAM (service_account)` -> `GCS`
+
+   The net result is you see the iam exchange but the original AWS caller is hidden in the GCSlogs
+   The following shows the logs emitted if using AssumeRole
 
 ![images/gcp_gcs_data_access.png](images/gcp_gcs_data_access.png)
 
 ![images/gcp_iam_audit_logs.png](images/gcp_iam_audit_logs.png)
 
+- `UseIAMToken:  false`:
+   In this mode, the AWS credential is exchanged for a GCP STS creds and then directly against a GCP Resource
+     `AWS Creds` -> `GCP STS (workload pool)` -> `GCS` 
+
+   The following logs shows the dataaccess logs when accessed directly as `arn:aws:iam::291738886548:user/svcacct1`:
+
+![images/gcs_logs_federated.png](images/gcs_logs_federated.png)
+
+>> UseIAMToken=fale only works on certain GCP resources.
 
 ### Direct AWS Credentials
 
@@ -226,7 +266,8 @@ and use directly, eg:
 			Scope:                "https://www.googleapis.com/auth/cloud-platform",
 			TargetResource:       "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1",
 			Region:               "us-east-1",
-			TargetServiceAccount: "aws-federated@mineral-minutia-820.iam.gserviceaccount.com",
+            TargetServiceAccount: "aws-federated@mineral-minutia-820.iam.gserviceaccount.com",
+            UseIAMToken:          true,
 		},
 	)        
 ```

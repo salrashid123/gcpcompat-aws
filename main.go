@@ -27,8 +27,11 @@ var ()
 
 func main() {
 
-	AWS_ACCESS_KEY_ID := "AKIAUH3H6-redacted"
-	AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4-redacted"
+	// AWS_ACCESS_KEY_ID := "AKIAUH3H6-redacted"
+	// AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4-redacted"
+
+	AWS_ACCESS_KEY_ID := "AKIAUH3H6EGKAUTTXASI"
+	AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4P9PPcXCcq67UHrsp4"
 
 	creds := credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
 
@@ -63,15 +66,6 @@ func main() {
 	log.Printf("Assumed user Arn: %s", *resp.AssumedRoleUser.Arn)
 	log.Printf("Assumed AssumedRoleId: %s", *resp.AssumedRoleUser.AssumedRoleId)
 	creds = credentials.NewStaticCredentials(*resp.Credentials.AccessKeyId, *resp.Credentials.SecretAccessKey, *resp.Credentials.SessionToken)
-
-	/*
-			   To use a useridentity directly (i.,e not via AssumeRole), configure the permission
-			   gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
-			  --role roles/iam.workloadIdentityUser \
-			  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
-		     and use directly
-		     	creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
-	*/
 	conf = &aws.Config{
 		Region:      aws.String(awsRegion),
 		Credentials: creds,
@@ -84,6 +78,15 @@ func main() {
 	}
 	log.Printf("New Caller Identity :" + result.GoString())
 
+	/*
+				   To use a useridentity directly (i.,e not via AssumeRole), configure the permission
+				   gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+				  --role roles/iam.workloadIdentityUser \
+				  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
+			     then use the AWS Credential without AssumeRole
+		   	creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+	*/
+
 	awsTokenSource, err := sal.AWSTokenSource(
 		&sal.AwsTokenConfig{
 			AwsCredential:        *creds,
@@ -91,6 +94,7 @@ func main() {
 			TargetResource:       "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1",
 			Region:               "us-east-1",
 			TargetServiceAccount: "aws-federated@mineral-minutia-820.iam.gserviceaccount.com",
+			UseIAMToken:          true,
 		},
 	)
 
