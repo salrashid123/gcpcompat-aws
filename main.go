@@ -27,11 +27,8 @@ var ()
 
 func main() {
 
-	// AWS_ACCESS_KEY_ID := "AKIAUH3H6-redacted"
-	// AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4-redacted"
-
-	AWS_ACCESS_KEY_ID := "AKIAUH3H6EGKAUTTXASI"
-	AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4P9PPcXCcq67UHrsp4"
+	AWS_ACCESS_KEY_ID := "AKIAUH3H6-redacted"
+	AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4-redacted"
 
 	creds := credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
 
