@@ -8,7 +8,7 @@ The referenced library [github.com/salrashid123/oauth2/google](https://github.co
 
 If the underlying credentials expire, the TokenSource will automatically renew itself, hands free.
 
-This repo is the first part that explores how to use the [workload identity federation](https://cloud.google.com/iam/docs/access-resources-aws) capability of GCP which allows for eternal principals (AWS,Azure or arbitrary OIDC provider) to map to a GCP credential.
+This repo is the first part that explores how to use the [workload identity federation](https://cloud.google.com/iam/docs/access-resources-aws) capability of GCP which allows for external principals (AWS,Azure or arbitrary OIDC provider) to map to a GCP credential.
 
 The followup samples will demonstrate federation w/ Azure and an arbitrary OIDC provider (okta or Google Cloud Identity Platform)
 
@@ -16,6 +16,10 @@ The followup samples will demonstrate federation w/ Azure and an arbitrary OIDC 
 >> This is not an officially supported Google product
 
 >> `salrashid123/oauth2/google` is also not supported by Google
+
+
+for OIDC based exchanges, see
+-[Exchange Generic OIDC Credentials for GCP Credentials using GCP STS Service](https://github.com/salrashid123/gcpcompat-oidc)
 
 ---
 
@@ -96,27 +100,8 @@ $ aws sts get-caller-identity
 
 Switch to the GCP account
 
-1. First crate a workflow identity pool 
 
-```bash
-gcloud beta iam workload-identity-pools create aws-pool-1 \
-    --location="global" \
-    --description="AWS " \
-    --display-name="AWS Pool"
-```
-
-2. Define aws-provider
-
-Define the aws-provider associated with that pool using your AWS AccountID (in this case its `291738886548`). The `attribute-mapping=` sections are the default mapping that does the actual translation from the AWS `getCallerIdentity()` claim back to a GCP principal.  
-You can define other mappings but we're using the default
-
-```bash
-gcloud beta iam workload-identity-pools providers create-aws aws-provider-1  \
-   --workload-identity-pool="aws-pool-1"     --account-id="291738886548"   \
-   --location="global"      --attribute-mapping="google.subject=assertion.arn"
-```
-
-3. Create Service Account
+1. Create Service Account
 
 Create a service account the AWS one will map to and grant this service account permissions on something (eg, gcs bucket)
 
@@ -133,22 +118,115 @@ gsutil cp foo.txt gs://$PROJECT-mybucket
 gsutil iam ch serviceAccount:aws-federated@$PROJECT.iam.gserviceaccount.com:objectViewer gs://$PROJECT-mybucket
 ```
 
-4.  Grant WorkloadIdentity Pool to use SA
+
+There are two option on how you want to map identities:  Either individual users and roles with sessions or the assume-role name itself.
+
+For individual users, follow (3), groups (4)
+
+3. Individual  (for exact match on arn->subject (`principal://`))
+
+The following commands below we are specifically mapping an arn to a subject.  That is, it will match for exactly
+
+* `"arn:aws:iam::291738886548:user/svcacct1"`
+* `"arn:aws:sts::291738886548:assumed-role/gcpsts/mysession"`
+
+- First create a workflow identity pool 
+
+```bash
+gcloud beta iam workload-identity-pools create aws-pool-1 \
+    --location="global" \
+    --description="AWS " \
+    --display-name="AWS Pool"
+```
+
+- Define aws-provider
+
+Define the aws-provider associated with that pool using your AWS AccountID (in this case its `291738886548`). The `attribute-mapping=` sections are the default mapping that does the actual translation from the AWS `getCallerIdentity()` claim back to a GCP principal.  
+You can define other mappings but we're using the default
+
+```bash
+gcloud beta iam workload-identity-pools providers create-aws aws-provider-1  \
+   --workload-identity-pool="aws-pool-1"     --account-id="291738886548"   \
+   --location="global"
+```
+
+(note, we are using the [default mapping](https://cloud.google.com/iam/docs/access-resources-aws#add-aws)  `attribute-mapping="google.subject=assertion.arn,attribute.aws_role=..."`)
+
+- Grant WorkloadIdentity Pool to use SA
 
 Now grant the mapped identity permissions to assume the actual GCP service account.
 
 In the example below, principal that can assume the AWS Role of `arn:aws:sts::291738886548:assumed-role/gcpsts/mysession` will be allowed to impersonate `aws-federated@$PROJECT.iam.gserviceaccount.com`
 
 ```bash
-gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT.iam.gserviceaccount.com   \
+gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
     --role roles/iam.workloadIdentityUser \
     --member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession"
+```
+
+4. Group  (for exact match on arn->subject (`principalSet://`))
+
+Note the command below we are specifically mapping the Role
+
+* `"arn:aws:sts::291738886548:assumed-role/gcpsts"`
+
+- Define identity-pool
+
+We will create a new identity pool here just to test
+
+```bash
+gcloud beta iam workload-identity-pools create aws-pool-2 \
+    --location="global" \
+    --description="AWS " \
+    --display-name="AWS Pool 2"
+```
+- Define aws-provider
+
+```bash
+gcloud beta iam workload-identity-pools providers create-aws aws-provider-2  \
+   --workload-identity-pool="aws-pool-2"     --account-id="291738886548"   \
+   --location="global" 
+```
+
+(note, we using the default mapping      `attribute-mapping` of `"google.subject=assertion.arn"` and `attribute.aws_role=<AWS Role>`)
+
+- Grant WorkloadIdentity Pool to use SA
+
+Note, we are using `principalSet://`
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+    --role roles/iam.workloadIdentityUser \
+    --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/gcpsts" 
+```
+
+---
+
+You should end up with IAM bindings on the service account and on the GCS Bucket itself
+
+```bash
+$ gcloud iam service-accounts get-iam-policy aws-federated@$PROJECT_ID.iam.gserviceaccount.com  
+bindings:
+- members:
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession
+  - principalSet://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/gcpsts
+  role: roles/iam.workloadIdentityUser
+version: 1
+
+$ gcloud projects get-iam-policy $PROJECT_ID
+role: roles/storage.admin
+- members:
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession
+  - principalSet://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/gcpsts
 ```
 
 ![images/gcp_iam.png](images/gcp_iam.png)
 
 
-Optionally verify by list
+Verify configurations by list
+
 ```bash
 $ gcloud beta iam workload-identity-pools list --location=global
 
@@ -156,13 +234,43 @@ $ gcloud beta iam workload-identity-pools list --location=global
 $ gcloud beta iam workload-identity-pools providers list --workload-identity-pool=aws-pool-1 --location=global
 ```
 
+---
 
 ### Test
 
 Edit `main.go` and specify the AWS Tokens and GCS buckets you have setup
 
+- Flags:
+```golang
+	gcpBucket               = flag.String("gcpBucket", "mineral-minutia-820-cab1", "GCS Bucket to access")
+	gcpObjectName           = flag.String("gcpObjectName", "foo.txt", "GCS object to access")
+	gcpResource             = flag.String("gcpResource", "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1", "the GCP resource to map")
+	gcpTargetServiceAccount = flag.String("gcpTargetServiceAccount", "aws-federated@mineral-minutia-820.iam.gserviceaccount.com", "the ServiceAccount to impersonate")
+
+	awsRegion          = flag.String("awsRegion", "us-east-1", "AWS Region")
+	awsRoleArn         = flag.String("awsRoleArn", "arn:aws:iam::291738886548:role/gcpsts", "ARN of the role to use")
+	awsSessionName     = flag.String("awsSessionName", "mysession", "Name of the session to use")
+	awsAccessKeyID     = flag.String("awsAccessKeyID", "AKIAUH3H6EGKE-redacted", "AWS access Key ID")
+	awsSecretAccessKey = flag.String("awsSecretAccessKey", "YRJ86SK5qTOZQzZTI1u/cA5z5KmLT-redacted", "AWS SecretKey")
+
+	useIAMToken = flag.Bool("useIAMToken", false, "Use IAMCredentials Token exchange")
+```
+
+- as `subject (principal://`)`
+
 ```bash
-$ go run main.go 
+$ go run main.go \
+   --gcpBucket mineral-minutia-820-cab1 \
+   --gcpObjectName foo.txt \
+   --gcpResource //iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1 \
+   --gcpTargetServiceAccount aws-federated@$PROJECT_ID.iam.gserviceaccount.com \
+   --useIAMToken \
+   --awsRegion us-east-1 \
+   --awsRoleArn arn:aws:iam::291738886548:role/gcpsts \
+   --awsSessionName mysession \
+   --awsAccessKeyID AKIAUH3H6EGKER-redacted \
+   --awsSecretAccessKey YRJ86SK5qTOZQzZTI1u-redacted 
+ 
 2020/10/22 15:32:50 Original Caller Identity :{
   Account: "291738886548",
   Arn: "arn:aws:iam::291738886548:user/svcacct1",
@@ -179,9 +287,25 @@ $ go run main.go
 
 fooooo
 ```
-
 the first part uses the static token, the second part assumes the role, the third part exchanges the token for a GCP one...finally a _standard_ Google Cloud Storage library is used to download and object using the derived credentials.
 
+
+- as `role (principalSet://`)`
+ (change to use `aws-pool-2` and `aws-provider-2`)
+
+```
+$ go run main.go \
+   --gcpBucket mineral-minutia-820-cab1 \
+   --gcpObjectName foo.txt \
+   --gcpResource //iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-2/providers/aws-provider-2 \
+   --gcpTargetServiceAccount aws-federated@$PROJECT_ID.iam.gserviceaccount.com \
+   --useIAMToken \
+   --awsRegion us-east-1 \
+   --awsRoleArn arn:aws:iam::291738886548:role/gcpsts \
+   --awsSessionName mysession \
+   --awsAccessKeyID AKIAUH3H6EGKER-redacted \
+   --awsSecretAccessKey YRJ86SK5qTOZQzZTI1u/cA5z5KmLTw-redacted 
+```
 
 ### Using Federated or IAM Tokens
 
@@ -189,21 +313,29 @@ GCP STS Tokens can be used directly against a few GCP services as described here
 
 Skip step `(5)` of [Exchange Token](https://cloud.google.com/iam/docs/access-resources-aws#exchange-token)
 
-
 What that means is you can skip the step to exchange the GCP Federation token for an Service Account token and _directly_ apply IAM policies on the resource.
 
 This not only saves the step of running the exchange but omits the need for a secondary GCP service account to impersonate.
 
 To use GCS, allow either the Assumed Role or AWS User access to the resource.  In this case `storage.objectAdmin` access:
 
+To use Federated tokens, use remove the `--useIAMToken` flag
+
+
 ```bash
-gcloud projects add-iam-policy-binding mineral-minutia-820  \
- --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession" \
+# principal://
+gcloud projects add-iam-policy-binding $PROJECT_ID  \
+ --member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession" \
    --role roles/storage.objectAdmin
 
-gcloud projects add-iam-policy-binding mineral-minutia-820  \
-    --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
+gcloud projects add-iam-policy-binding $PROJECT_ID  \
+    --member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
       --role roles/storage.objectAdmin
+
+# principalSet://
+gcloud projects add-iam-policy-binding $PROJECT_ID  \
+ --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/gcpsts" \
+   --role roles/storage.objectAdmin
 ```
 
 Set `UseIAMToken:  false` in the go code
@@ -233,7 +365,7 @@ Depending on the mode you used `UseIAMToken` flag in code, you may either see th
 
 ![images/gcs_logs_federated.png](images/gcs_logs_federated.png)
 
->> UseIAMToken=fale only works on certain GCP resources.
+>> UseIAMToken=false only works on certain GCP resources.
 
 ### Direct AWS Credentials
 
@@ -247,7 +379,7 @@ Depending on the mode you used `UseIAMToken` flag in code, you may either see th
 and use directly, eg:
 
 ```golang
-    creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+  creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
 	conf = &aws.Config{
 		Region:      aws.String(awsRegion),
 		Credentials: creds,

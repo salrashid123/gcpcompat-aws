@@ -121,8 +121,8 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/salrashid123/oauth2 v1.0.0 h1:xaHimxCMkjbH0PVi1bExn6rPuSjVOih+K/bzqni1ogA=
-github.com/salrashid123/oauth2/aws v0.0.0-20201101201311-6cbcba0c0988 h1:1G0GlbD6RaKqd+15g8E0WaiwpS5zn5jH8pTkQOoznZY=
-github.com/salrashid123/oauth2/aws v0.0.0-20201101201311-6cbcba0c0988/go.mod h1:U+w+eBd9cmKW+hTO5gYfldIZcXsgWgLYHa2zl8xUVSA=
+github.com/salrashid123/oauth2/aws v0.0.0-20201101230423-06183d8e5ed6 h1:mtbAjp+voNvUnrEvB/jm64cN+EvJZFO6l3iWiVjESxI=
+github.com/salrashid123/oauth2/aws v0.0.0-20201101230423-06183d8e5ed6/go.mod h1:U+w+eBd9cmKW+hTO5gYfldIZcXsgWgLYHa2zl8xUVSA=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

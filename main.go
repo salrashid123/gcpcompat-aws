@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"io"
 	"log"
 	"os"
@@ -15,22 +16,31 @@ import (
 	"google.golang.org/api/option"
 )
 
-const (
-	gcpBucketName  = "mineral-minutia-820-cab1"
-	gcpObjectName  = "foo.txt"
-	awsRegion      = "us-east-1"
-	awsRoleArn     = "arn:aws:iam::291738886548:role/gcpsts"
-	awsSessionName = "mysession"
+const ()
+
+var (
+	gcpBucket               = flag.String("gcpBucket", "mineral-minutia-820-cab1", "GCS Bucket to access")
+	gcpObjectName           = flag.String("gcpObjectName", "foo.txt", "GCS object to access")
+	gcpResource             = flag.String("gcpResource", "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1", "the GCP resource to map")
+	gcpTargetServiceAccount = flag.String("gcpTargetServiceAccount", "aws-federated@mineral-minutia-820.iam.gserviceaccount.com", "the ServiceAccount to impersonate")
+
+	awsRegion          = flag.String("awsRegion", "us-east-1", "AWS Region")
+	awsRoleArn         = flag.String("awsRoleArn", "arn:aws:iam::291738886548:role/gcpsts", "ARN of the role to use")
+	awsSessionName     = flag.String("awsSessionName", "mysession", "Name of the session to use")
+	awsAccessKeyID     = flag.String("awsAccessKeyID", "AKIAUH3H6EGK-redacted", "AWS access Key ID")
+	awsSecretAccessKey = flag.String("awsSecretAccessKey", "YRJ86SK5qTOZQzZTI1u/cA5z5KmLT-redacted", "AWS SecretKey")
+
+	useIAMToken = flag.Bool("useIAMToken", false, "Use IAMCredentials Token exchange")
 )
 
-var ()
-
 func main() {
+	flag.Parse()
 
-	AWS_ACCESS_KEY_ID := "AKIAUH3H6-redacted"
-	AWS_SECRET_ACCESS_KEY := "K61ws18wCEOqu8nS7tcM3M4-redacted"
+	if *awsAccessKeyID == "" || *awsSecretAccessKey == "" {
+		log.Fatalf("awsAccessKeyID, awsSecretAccessKey are required")
+	}
 
-	creds := credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+	creds := credentials.NewStaticCredentials(*awsAccessKeyID, *awsSecretAccessKey, "")
 
 	session, err := session.NewSession(&aws.Config{
 		Credentials: creds,
@@ -40,7 +50,7 @@ func main() {
 	}
 
 	conf := &aws.Config{
-		Region:      aws.String(awsRegion),
+		Region:      aws.String(*awsRegion),
 		Credentials: creds,
 	}
 	stsService := sts.New(session, conf)
@@ -51,9 +61,33 @@ func main() {
 	}
 	log.Printf("Original Caller Identity :" + result.GoString())
 
+	/*
+		To use a useridentity directly (i.,e not via AssumeRole), configure the permission on the service
+				gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+					  --role roles/iam.workloadIdentityUser \
+					  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
+			and GCS bucket
+				gcloud projects add-iam-policy-binding $PROJECT_ID  \
+		    		--member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
+		      		--role roles/storage.objectAdmin
+				then use the AWS Credential with or without assumerole
+
+			creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+			awsTokenSource, err := sal.AWSTokenSource(
+				&sal.AwsTokenConfig{
+					AwsCredential:        *creds,
+					Scope:                "https://www.googleapis.com/auth/cloud-platform",
+					TargetResource:       *gcpResource,
+					Region:               *awsRegion,
+					TargetServiceAccount: *gcpTargetServiceAccount,
+					UseIAMToken:          *useIAMToken,
+				},
+			)
+	*/
+
 	params := &sts.AssumeRoleInput{
-		RoleArn:         aws.String(awsRoleArn),
-		RoleSessionName: aws.String(awsSessionName),
+		RoleArn:         aws.String(*awsRoleArn),
+		RoleSessionName: aws.String(*awsSessionName),
 	}
 	resp, err := stsService.AssumeRole(params)
 	if err != nil {
@@ -64,7 +98,7 @@ func main() {
 	log.Printf("Assumed AssumedRoleId: %s", *resp.AssumedRoleUser.AssumedRoleId)
 	creds = credentials.NewStaticCredentials(*resp.Credentials.AccessKeyId, *resp.Credentials.SecretAccessKey, *resp.Credentials.SessionToken)
 	conf = &aws.Config{
-		Region:      aws.String(awsRegion),
+		Region:      aws.String(*awsRegion),
 		Credentials: creds,
 	}
 	stsService = sts.New(session, conf)
@@ -75,23 +109,14 @@ func main() {
 	}
 	log.Printf("New Caller Identity :" + result.GoString())
 
-	/*
-				   To use a useridentity directly (i.,e not via AssumeRole), configure the permission
-				   gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
-				  --role roles/iam.workloadIdentityUser \
-				  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
-			     then use the AWS Credential without AssumeRole
-		   	creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
-	*/
-
 	awsTokenSource, err := sal.AWSTokenSource(
 		&sal.AwsTokenConfig{
 			AwsCredential:        *creds,
 			Scope:                "https://www.googleapis.com/auth/cloud-platform",
-			TargetResource:       "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1",
-			Region:               "us-east-1",
-			TargetServiceAccount: "aws-federated@mineral-minutia-820.iam.gserviceaccount.com",
-			UseIAMToken:          true,
+			TargetResource:       *gcpResource,
+			Region:               *awsRegion,
+			TargetServiceAccount: *gcpTargetServiceAccount,
+			UseIAMToken:          *useIAMToken,
 		},
 	)
 
@@ -107,8 +132,8 @@ func main() {
 		log.Fatalf("Could not create storage Client: %v", err)
 	}
 
-	bkt := storageClient.Bucket(gcpBucketName)
-	obj := bkt.Object(gcpObjectName)
+	bkt := storageClient.Bucket(*gcpBucket)
+	obj := bkt.Object(*gcpObjectName)
 	r, err := obj.NewReader(ctx)
 	if err != nil {
 		panic(err)
