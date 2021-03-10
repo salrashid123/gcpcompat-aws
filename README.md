@@ -4,16 +4,22 @@ Sample procedure and referenced library that will exchange a long term or short 
 
 You can use the GCP credential then to access any service the mapped principal has GCP IAM permissions on.
 
-The referenced library [github.com/salrashid123/oauth2/google](https://github.com/salrashid123/oauth2#usage-aws) surfaces an the mapped credential as an [oauth2.TokenSource](https://godoc.org/golang.org/x/oauth2#TokenSource) for use in any GCP cloud library. 
-
-If the underlying credentials expire, the TokenSource will automatically renew itself, hands free.
-
 This repo is the first part that explores how to use the [workload identity federation](https://cloud.google.com/iam/docs/access-resources-aws) capability of GCP which allows for external principals (AWS,Azure or arbitrary OIDC provider) to map to a GCP credential.
+
+The two procedures described in this repo will acquire a Google Credential as described here:
+ - [https://cloud.google.com/iam/docs/access-resources-aws#generate](https://cloud.google.com/iam/docs/access-resources-aws#generate)
+
+The "Automatic" way is recommended and is supported by Google
+
+The "Manual" way is also covered in this repo but I decided to wrap the steps for that into my own library here [github.com/salrashid123/oauth2/google](https://github.com/salrashid123/oauth2#usage-aws) which surfaces the credential as an [oauth2.TokenSource](https://godoc.org/golang.org/x/oauth2#TokenSource) for use in any GCP cloud library.    
+
+You can certainly use either procedure but the Automatic way is included with the library.  The Manual way can be done by hand but the wrapped library I'll describe here is not officially supported
+
 
 The followup samples will demonstrate federation w/ Azure and an arbitrary OIDC provider (okta or Google Cloud Identity Platform)
 
 
->> This is not an officially supported Google product
+>> This repository is not supported by Google
 
 >> `salrashid123/oauth2/google` is also not supported by Google
 
@@ -33,6 +39,19 @@ To use this, you need both a GCP and AWS project and the ability to create user/
 
 
 #### AWS
+
+There are two types of AWS creds this repo demonstrates:  
+
+- Manual Exchange:
+  In this you manually do all the steps of exchanging `AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY` for a federated token and then finally use that token
+
+- Automatic Exchange
+  In this you use the google cloud client libraries to do all the heavy lifting.  This is the recommended approach
+
+
+>> It is recommended to do the manual first just to understand this capability and then move onto the automatic
+
+#### Manual Exchange
 
 On the AWS side, you need to configure a user, then allow it to `AssumeRole` to derive a short-term token.  You do not need to go the extra step to assumeRole but this example shows best-practices for short-lived tokens.
 
@@ -234,9 +253,99 @@ $ gcloud beta iam workload-identity-pools list --location=global
 $ gcloud beta iam workload-identity-pools providers list --workload-identity-pool=aws-pool-1 --location=global
 ```
 
+
+### Automatic Exchange
+
+With the automatic exchange, the GCP cloud auth libraries do all these steps for you.
+
+See [generate automatic](https://cloud.google.com/iam/docs/access-resources-aws#generate-automatic)
+
+
+For this to work, you must have previously setup the the `aws-federated@$PROJECT_ID.iam.gserviceaccount.com` service account and gave it permissions to the GCS object.  You should have also configured the `aws-provider-1` configurations
+
+
+First step is to generate the client library helper file which will act as the `APPLICATION_DEFAULT_CREDENTIAL`
+
+```bash
+gcloud beta iam workload-identity-pools create-cred-config \
+    projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1 \
+    --service-account=aws-federated@$PROJECT_ID.iam.gserviceaccount.com \
+    --output-file=sts-creds.json \
+    --aws
+```
+
+It should look something like this:
+
+```json
+{
+  "type": "external_account",
+  "audience": "//iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1",
+  "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+  "token_url": "https://sts.googleapis.com/v1/token",
+  "credential_source": {
+    "environment_id": "aws1",
+    "region_url": "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+    "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials",
+    "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+  },
+  "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/aws-federated@mineral-minutia-820.iam.gserviceaccount.com:generateAccessToken"
+}
+```
+
+Copy the `sts-creds.json` file to the EC2 instance
+
+On the EC2 instance, make sure it has a role binding:
+
+```bash
+[root@ip-172-31-28-179 test]# aws sts get-caller-identity
+{
+    "Account": "291738886548", 
+    "UserId": "AROAUH3H6EGKM3W5BCPKR:i-01eb8a107a2026dcd", 
+    "Arn": "arn:aws:sts::291738886548:assumed-role/ec2role/i-01eb8a107a2026dcd"
+}
+```
+
+Now Map that AWS role to the service account so it can get a token on its behalf
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+    --role roles/iam.workloadIdentityUser \
+    --member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/ec2role/i-01eb8a107a2026dcd"
+```
+
+You should end up with IAM bindings on the service account and on the GCS Bucket itself similar to above
+
+```bash
+$ gcloud iam service-accounts get-iam-policy aws-federated@$PROJECT_ID.iam.gserviceaccount.com  
+bindings:
+- members:
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/ec2role/i-01eb8a107a2026dcd
+  role: roles/iam.workloadIdentityUser
+version: 1
+
+$ gcloud projects get-iam-policy $PROJECT_ID
+role: roles/storage.admin
+- members:
+  - principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/ec2role/i-01eb8a107a2026dcd
+```
+
+---
+### Test Automatic
+
+Finally, on the EC2 instance, invoke the client provided in this repo:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
+# go run main.go    --gcpBucket mineral-minutia-820-cab1    --gcpObjectName foo.txt    --useADC
+2021/03/10 22:05:36 >>>>>>>>>>>>>>>>> Using ADC
+FOOOOO
+```
+
+the `FOOOO` is ofcourse our file
+
 ---
 
-### Test
+### Test Manual
 
 Edit `main.go` and specify the AWS Tokens and GCS buckets you have setup
 
@@ -249,7 +358,8 @@ Edit `main.go` and specify the AWS Tokens and GCS buckets you have setup
 
 	awsRegion          = flag.String("awsRegion", "us-east-1", "AWS Region")
 	awsRoleArn         = flag.String("awsRoleArn", "arn:aws:iam::291738886548:role/gcpsts", "ARN of the role to use")
-	awsSessionName     = flag.String("awsSessionName", "mysession", "Name of the session to use")
+  awsSessionName     = flag.String("awsSessionName", "mysession", "Name of the session to use")
+ 	useADC             = flag.Bool("useADC", false, "Use Application Default Credentials")
 	awsAccessKeyID     = flag.String("awsAccessKeyID", "AKIAUH3H6EGKE-redacted", "AWS access Key ID")
 	awsSecretAccessKey = flag.String("awsSecretAccessKey", "YRJ86SK5qTOZQzZTI1u/cA5z5KmLT-redacted", "AWS SecretKey")
 
@@ -341,6 +451,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID  \
 Set `UseIAMToken:  false` in the go code
 
 
+>> NOTE: the GCP "Automatic" libraries always use impersonation...they do not use Federated tokens directly!
 
 ### Logging
 

@@ -29,118 +29,140 @@ var (
 	awsSessionName     = flag.String("awsSessionName", "mysession", "Name of the session to use")
 	awsAccessKeyID     = flag.String("awsAccessKeyID", "AKIAUH3H6EGK-redacted", "AWS access Key ID")
 	awsSecretAccessKey = flag.String("awsSecretAccessKey", "YRJ86SK5qTOZQzZTI1u/cA5z5KmLT-redacted", "AWS SecretKey")
-
-	useIAMToken = flag.Bool("useIAMToken", false, "Use IAMCredentials Token exchange")
+	useADC             = flag.Bool("useADC", false, "Use Application Default Credentials")
+	useIAMToken        = flag.Bool("useIAMToken", false, "Use IAMCredentials Token exchange")
 )
 
 func main() {
 	flag.Parse()
 
-	if *awsAccessKeyID == "" || *awsSecretAccessKey == "" {
-		log.Fatalf("awsAccessKeyID, awsSecretAccessKey are required")
-	}
+	if *useADC {
+		/// USE ADC
 
-	creds := credentials.NewStaticCredentials(*awsAccessKeyID, *awsSecretAccessKey, "")
+		log.Printf(">>>>>>>>>>>>>>>>> Using ADC")
+		ctx := context.Background()
+		storageClient, err := storage.NewClient(ctx)
+		if err != nil {
+			log.Fatalf("Could not create storage Client: %v", err)
+		}
 
-	session, err := session.NewSession(&aws.Config{
-		Credentials: creds,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+		bkt := storageClient.Bucket(*gcpBucket)
+		obj := bkt.Object(*gcpObjectName)
+		r, err := obj.NewReader(ctx)
+		if err != nil {
+			panic(err)
+		}
+		defer r.Close()
+		if _, err := io.Copy(os.Stdout, r); err != nil {
+			panic(err)
+		}
+	} else {
 
-	conf := &aws.Config{
-		Region:      aws.String(*awsRegion),
-		Credentials: creds,
-	}
-	stsService := sts.New(session, conf)
-	input := &sts.GetCallerIdentityInput{}
-	result, err := stsService.GetCallerIdentity(input)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Original Caller Identity :" + result.GoString())
+		if *awsAccessKeyID == "" || *awsSecretAccessKey == "" {
+			log.Fatalf("awsAccessKeyID, awsSecretAccessKey are required")
+		}
 
-	/*
-		To use a useridentity directly (i.,e not via AssumeRole), configure the permission on the service
-				gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
-					  --role roles/iam.workloadIdentityUser \
-					  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
-			and GCS bucket
-				gcloud projects add-iam-policy-binding $PROJECT_ID  \
-		    		--member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
-		      		--role roles/storage.objectAdmin
-				then use the AWS Credential with or without assumerole
+		creds := credentials.NewStaticCredentials(*awsAccessKeyID, *awsSecretAccessKey, "")
 
-			creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
-			awsTokenSource, err := sal.AWSTokenSource(
-				&sal.AwsTokenConfig{
-					AwsCredential:        *creds,
-					Scope:                "https://www.googleapis.com/auth/cloud-platform",
-					TargetResource:       *gcpResource,
-					Region:               *awsRegion,
-					TargetServiceAccount: *gcpTargetServiceAccount,
-					UseIAMToken:          *useIAMToken,
-				},
-			)
-	*/
+		session, err := session.NewSession(&aws.Config{
+			Credentials: creds,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	params := &sts.AssumeRoleInput{
-		RoleArn:         aws.String(*awsRoleArn),
-		RoleSessionName: aws.String(*awsSessionName),
-	}
-	resp, err := stsService.AssumeRole(params)
-	if err != nil {
-		log.Fatal(err)
-	}
+		conf := &aws.Config{
+			Region:      aws.String(*awsRegion),
+			Credentials: creds,
+		}
+		stsService := sts.New(session, conf)
+		input := &sts.GetCallerIdentityInput{}
+		result, err := stsService.GetCallerIdentity(input)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Original Caller Identity :" + result.GoString())
 
-	log.Printf("Assumed user Arn: %s", *resp.AssumedRoleUser.Arn)
-	log.Printf("Assumed AssumedRoleId: %s", *resp.AssumedRoleUser.AssumedRoleId)
-	creds = credentials.NewStaticCredentials(*resp.Credentials.AccessKeyId, *resp.Credentials.SecretAccessKey, *resp.Credentials.SessionToken)
-	conf = &aws.Config{
-		Region:      aws.String(*awsRegion),
-		Credentials: creds,
-	}
-	stsService = sts.New(session, conf)
-	input = &sts.GetCallerIdentityInput{}
-	result, err = stsService.GetCallerIdentity(input)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("New Caller Identity :" + result.GoString())
+		/*
+			To use a useridentity directly (i.,e not via AssumeRole), configure the permission on the service
+					gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
+						  --role roles/iam.workloadIdentityUser \
+						  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
+				and GCS bucket
+					gcloud projects add-iam-policy-binding $PROJECT_ID  \
+			    		--member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
+			      		--role roles/storage.objectAdmin
+					then use the AWS Credential with or without assumerole
 
-	awsTokenSource, err := sal.AWSTokenSource(
-		&sal.AwsTokenConfig{
-			AwsCredential:        *creds,
-			Scope:                "https://www.googleapis.com/auth/cloud-platform",
-			TargetResource:       *gcpResource,
-			Region:               *awsRegion,
-			TargetServiceAccount: *gcpTargetServiceAccount,
-			UseIAMToken:          *useIAMToken,
-		},
-	)
+				creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
+				awsTokenSource, err := sal.AWSTokenSource(
+					&sal.AwsTokenConfig{
+						AwsCredential:        *creds,
+						Scope:                "https://www.googleapis.com/auth/cloud-platform",
+						TargetResource:       *gcpResource,
+						Region:               *awsRegion,
+						TargetServiceAccount: *gcpTargetServiceAccount,
+						UseIAMToken:          *useIAMToken,
+					},
+				)
+		*/
 
-	tok, err := awsTokenSource.Token()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("AWS Derived GCP access_token: %s\n", tok.AccessToken)
+		params := &sts.AssumeRoleInput{
+			RoleArn:         aws.String(*awsRoleArn),
+			RoleSessionName: aws.String(*awsSessionName),
+		}
+		resp, err := stsService.AssumeRole(params)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	ctx := context.Background()
-	storageClient, err := storage.NewClient(ctx, option.WithTokenSource(awsTokenSource))
-	if err != nil {
-		log.Fatalf("Could not create storage Client: %v", err)
-	}
+		log.Printf("Assumed user Arn: %s", *resp.AssumedRoleUser.Arn)
+		log.Printf("Assumed AssumedRoleId: %s", *resp.AssumedRoleUser.AssumedRoleId)
+		creds = credentials.NewStaticCredentials(*resp.Credentials.AccessKeyId, *resp.Credentials.SecretAccessKey, *resp.Credentials.SessionToken)
+		conf = &aws.Config{
+			Region:      aws.String(*awsRegion),
+			Credentials: creds,
+		}
+		stsService = sts.New(session, conf)
+		input = &sts.GetCallerIdentityInput{}
+		result, err = stsService.GetCallerIdentity(input)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("New Caller Identity :" + result.GoString())
 
-	bkt := storageClient.Bucket(*gcpBucket)
-	obj := bkt.Object(*gcpObjectName)
-	r, err := obj.NewReader(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Close()
-	if _, err := io.Copy(os.Stdout, r); err != nil {
-		panic(err)
-	}
+		awsTokenSource, err := sal.AWSTokenSource(
+			&sal.AwsTokenConfig{
+				AwsCredential:        *creds,
+				Scope:                "https://www.googleapis.com/auth/cloud-platform",
+				TargetResource:       *gcpResource,
+				Region:               *awsRegion,
+				TargetServiceAccount: *gcpTargetServiceAccount,
+				UseIAMToken:          *useIAMToken,
+			},
+		)
 
+		tok, err := awsTokenSource.Token()
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("AWS Derived GCP access_token: %s\n", tok.AccessToken)
+
+		ctx := context.Background()
+		storageClient, err := storage.NewClient(ctx, option.WithTokenSource(awsTokenSource))
+		if err != nil {
+			log.Fatalf("Could not create storage Client: %v", err)
+		}
+
+		bkt := storageClient.Bucket(*gcpBucket)
+		obj := bkt.Object(*gcpObjectName)
+		r, err := obj.NewReader(ctx)
+		if err != nil {
+			panic(err)
+		}
+		defer r.Close()
+		if _, err := io.Copy(os.Stdout, r); err != nil {
+			panic(err)
+		}
+	}
 }
