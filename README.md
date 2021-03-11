@@ -13,7 +13,7 @@ The "Automatic" way is recommended and is supported by Google
 
 The "Manual" way is also covered in this repo but I decided to wrap the steps for that into my own library here [github.com/salrashid123/oauth2/google](https://github.com/salrashid123/oauth2#usage-aws) which surfaces the credential as an [oauth2.TokenSource](https://godoc.org/golang.org/x/oauth2#TokenSource) for use in any GCP cloud library.    
 
-You can certainly use either procedure but the Automatic way is included with the library.  The Manual way can be done by hand but the wrapped library I'll describe here is not officially supported
+You can certainly use either procedure but the Automatic way is included with the *supported, standard* library.  The Manual way can be done by hand but the wrapped library I'll describe here is not officially supported
 
 
 The followup samples will demonstrate federation w/ Azure and an arbitrary OIDC provider (okta or Google Cloud Identity Platform)
@@ -343,6 +343,16 @@ FOOOOO
 
 the `FOOOO` is ofcourse our file
 
+If you are on your laptop and have the AWS Environment variables, you can also use the automatic flow
+
+```bash
+export AWS_ACCESS_KEY_ID=redacted 
+export AWS_SECRET_ACCESS_KEY=redacted
+export AWS_DEFAULT_REGION=us-east-2
+
+export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
+# go run main.go    --gcpBucket mineral-minutia-820-cab1    --gcpObjectName foo.txt    --useADC
+```
 ---
 
 ### Test Manual
@@ -378,8 +388,8 @@ $ go run main.go \
    --awsRegion us-east-1 \
    --awsRoleArn arn:aws:iam::291738886548:role/gcpsts \
    --awsSessionName mysession \
-   --awsAccessKeyID AKIAUH3H6EGKER-redacted \
-   --awsSecretAccessKey YRJ86SK5qTOZQzZTI1u-redacted 
+   --awsAccessKeyID $AWS_ACCESS_KEY_ID \
+   --awsSecretAccessKey $AWS_SECRET_ACCESS_KEY 
  
 2020/10/22 15:32:50 Original Caller Identity :{
   Account: "291738886548",
@@ -403,7 +413,7 @@ the first part uses the static token, the second part assumes the role, the thir
 - as `role (principalSet://`)`
  (change to use `aws-pool-2` and `aws-provider-2`)
 
-```
+```bash
 $ go run main.go \
    --gcpBucket mineral-minutia-820-cab1 \
    --gcpObjectName foo.txt \
@@ -413,8 +423,8 @@ $ go run main.go \
    --awsRegion us-east-1 \
    --awsRoleArn arn:aws:iam::291738886548:role/gcpsts \
    --awsSessionName mysession \
-   --awsAccessKeyID AKIAUH3H6EGKER-redacted \
-   --awsSecretAccessKey YRJ86SK5qTOZQzZTI1u/cA5z5KmLTw-redacted 
+   --awsAccessKeyID $AWS_ACCESS_KEY_ID \
+   --awsSecretAccessKey $AWS_SECRET_ACCESS_KEY 
 ```
 
 ### Using Federated or IAM Tokens
@@ -451,7 +461,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID  \
 Set `UseIAMToken:  false` in the go code
 
 
->> NOTE: the GCP "Automatic" libraries always use impersonation...they do not use Federated tokens directly!
+>> NOTE: the GCP "Automatic" libraries  use impersonation by default...HOwever, if you DELETE the `service_account_impersonation_url` entry  in the sts-config.json file, the ADC library will end up using federated tokens!
 
 ### Logging
 
