@@ -84,27 +84,19 @@ func main() {
 		log.Printf("Original Caller Identity :" + result.GoString())
 
 		/*
-			To use a useridentity directly (i.,e not via AssumeRole), configure the permission on the service
-					gcloud iam service-accounts add-iam-policy-binding aws-federated@$PROJECT_ID.iam.gserviceaccount.com   \
-						  --role roles/iam.workloadIdentityUser \
-						  --member "principal://iam.googleapis.com/projects/1071284184436/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"
-				and GCS bucket
-					gcloud projects add-iam-policy-binding $PROJECT_ID  \
-			    		--member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1"\
-			      		--role roles/storage.objectAdmin
-					then use the AWS Credential with or without assumerole
+				To use a useridentity directly (i.,e not via AssumeRole), configure the permission on the service
 
-				creds = credentials.NewStaticCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "")
-				awsTokenSource, err := sal.AWSTokenSource(
-					&sal.AwsTokenConfig{
-						AwsCredential:        *creds,
-						Scope:                "https://www.googleapis.com/auth/cloud-platform",
-						TargetResource:       *gcpResource,
-						Region:               *awsRegion,
-						TargetServiceAccount: *gcpTargetServiceAccount,
-						UseIAMToken:          *useIAMToken,
-					},
-				)
+			creds = credentials.NewStaticCredentials(*awsAccessKeyID, *awsSecretAccessKey, "")
+			awsTokenSource, err := sal.AWSTokenSource(
+				&sal.AwsTokenConfig{
+					AwsCredential:        *creds,
+					Scope:                "https://www.googleapis.com/auth/cloud-platform",
+					TargetResource:       *gcpResource,
+					Region:               *awsRegion,
+					TargetServiceAccount: *gcpTargetServiceAccount,
+					UseIAMToken:          *useIAMToken,
+				},
+			)
 		*/
 
 		params := &sts.AssumeRoleInput{
