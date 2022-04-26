@@ -1,4 +1,4 @@
-## Exchange AWS Credentials for GCP Credentials using GCP STS Service
+## GCP Workload Identity Federation using AWS Credentials
 
 This is a sample procedure that will exchange a long term or short term AWS credential for a GCP credential.
 
@@ -20,10 +20,11 @@ You can certainly use either procedure but the Automatic way is included with th
 >> This repository is not supported by Google
 >> `salrashid123/oauth2/google` is also not supported by Google
 
-
-for OIDC based exchanges, see
--[Exchange Generic OIDC Credentials for GCP Credentials using GCP STS Service](https://github.com/salrashid123/gcpcompat-oidc)
-
+also see
+- [GCP Workload Identity Federation using OIDC Credentials](https://github.com/salrashid123/gcpcompat-oidc)
+- [GCP Workload Identity Federation using SAML Credentials](https://github.com/salrashid123/gcpcompat-saml)
+- [GCP Workload Identity Federation using AWS Credentials](https://github.com/salrashid123/gcpcompat-aws)
+ 
 ---
 
 ### Workload Federation - AWS
