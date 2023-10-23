@@ -49,10 +49,14 @@ Again, the two types of flows this repo demonstrates:
 
 This tutorial will cover various source AWS identity for federation and how they map to a GCP  [principal:// and principalSet://](https://cloud.google.com/iam/docs/workload-identity-federation#impersonation)
 
+---
+
 a) `AWS User --> GCP principal:// --> Impersonate Service Account --> GCP Resource`
 
   AWS User  `"Arn": "arn:aws:iam::291738886548:user/svcacct1"` mapped to 
   `principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:iam::291738886548:user/svcacct1`
+
+---
 
 b) `AWS User --> AWS Assumed Role --> AWS Named Session --> GCP principal:// --> Impersonate Service Account --> GCP Resource`
 
@@ -60,11 +64,15 @@ b) `AWS User --> AWS Assumed Role --> AWS Named Session --> GCP principal:// -->
   `"Arn": "arn:aws:sts::291738886548:assumed-role/gcpsts/mysession"` mapped to 
   `principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/subject/arn:aws:sts::291738886548:assumed-role/gcpsts/mysession`
 
+---
+
 c) `AWS User --> AWS Assumed Role --> GCP principalSet:// --> Impersonate Service Account --> GCP Resource`
 
   AWS User assumes Role
 `arn:aws:sts::291738886548:assumed-role/gcpsts` mapped to
 `principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/gcpsts`
+
+---
 
 d) `AWS EC2 --> AWS Assumed EC2 Role -->  GCP principalSet:// --> Impersonate Service Account --> GCP Resource`
 
@@ -72,6 +80,7 @@ d) `AWS EC2 --> AWS Assumed EC2 Role -->  GCP principalSet:// --> Impersonate Se
   `arn:aws:sts::291738886548:assumed-role/ec2role` mapped to
   `"principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-2/attribute.aws_role/arn:aws:sts::291738886548:assumed-role/ec2role"`
 
+---
 
 Option (d) is likely the most common usecase since it allows a group of EC2 instances to collectively map to a GCP identity.
 
@@ -180,7 +189,7 @@ The following commands below we are specifically mapping an arn to a subject.  T
 - First create a workflow identity pool 
 
 ```bash
-gcloud beta iam workload-identity-pools create aws-pool-1 \
+gcloud iam workload-identity-pools create aws-pool-1 \
     --location="global" \
     --description="AWS " \
     --display-name="AWS Pool"
@@ -194,7 +203,7 @@ The `attribute-mapping=` sections are the default mapping that does the actual t
 You can define other mappings but we're using the default
 
 ```bash
-gcloud beta iam workload-identity-pools providers create-aws aws-provider-1  \
+gcloud iam workload-identity-pools providers create-aws aws-provider-1  \
    --workload-identity-pool="aws-pool-1"     --account-id="291738886548"   \
    --location="global"
 ```
@@ -235,7 +244,7 @@ Note the command below we are specifically mapping federation on _TWO_ Roles tha
 We will create a new identity pool here just to test this separately from (a)
 
 ```bash
-gcloud beta iam workload-identity-pools create aws-pool-2 \
+gcloud iam workload-identity-pools create aws-pool-2 \
     --location="global" \
     --description="AWS " \
     --display-name="AWS Pool 2"
@@ -243,7 +252,7 @@ gcloud beta iam workload-identity-pools create aws-pool-2 \
 - Define aws-provider
 
 ```bash
-gcloud beta iam workload-identity-pools providers create-aws aws-provider-2  \
+gcloud iam workload-identity-pools providers create-aws aws-provider-2  \
    --workload-identity-pool="aws-pool-2"     --account-id="291738886548"   \
    --location="global" 
 ```
@@ -350,7 +359,7 @@ Finally, on the EC2 instance, invoke the client provided in this repo:
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
 
-$ go run main.go    --gcpBucket mineral-minutia-820-cab1    --gcpObjectName foo.txt    --useADC
+$ go run main.go    --gcpBucket $PROJECT_ID-mybucket    --gcpObjectName foo.txt    --useADC
   2021/03/10 22:05:36 >>>>>>>>>>>>>>>>> Using ADC
   FOOOOO
 ```
@@ -365,7 +374,7 @@ export AWS_SECRET_ACCESS_KEY=redacted
 export AWS_DEFAULT_REGION=us-east-1
 
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
-$ go run main.go    --gcpBucket mineral-minutia-820-cab1    --gcpObjectName foo.txt    --useADC
+$ go run main.go    --gcpBucket $PROJECT_ID-mybucket    --gcpObjectName foo.txt    --useADC
 ```
 
 >> TODO: update google storage client library to pickup [PR482](https://github.com/golang/oauth2/pull/482)
@@ -408,7 +417,7 @@ $ aws sts get-caller-identity
 }
 
 $ go run main.go \
-   --gcpBucket mineral-minutia-820-cab1 \
+   --gcpBucket $PROJECT_ID-mybucket \
    --gcpObjectName foo.txt \
    --gcpResource //iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1 \
    --gcpTargetServiceAccount aws-federated@$PROJECT_ID.iam.gserviceaccount.com \
@@ -539,7 +548,7 @@ In the following, we are using AWS credentials as the source with the ARN of `--
 If you want to see this work, uncomment the appropriate sections in `main.go`,  
 
 ```bash
-$ go run main.go    --gcpBucket mineral-minutia-820-cab1    --gcpObjectName foo.txt  \
+$ go run main.go    --gcpBucket $PROJECT_ID-bucket    --gcpObjectName foo.txt  \
    --gcpResource //iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/aws-pool-1/providers/aws-provider-1   \
    --gcpTargetServiceAccount aws-federated@$PROJECT_ID.iam.gserviceaccount.com \
    --useIAMToken  \
